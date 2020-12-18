@@ -2,14 +2,13 @@ tool
 class_name FocusSpinBox # An int-only SpinBox that allows the up/down buttons to gain focus.
 extends Control
 
-signal value_changed # passes value
+signal value_changed # passes our new value
 signal focus_fully_exited # no binds
-signal button_pressed # passes "up" or "down"
+signal button_pressed # passes "up" or "down" string
 
 enum alignments {left, center, right, fill}
-var value: int = 0
-var last_valid_value: int = 0
-export (int) var initial_value = 0 setget edit_initial_value
+
+export (int) var initial_value: int setget edit_initial_value
 export var step: int = 1
 export var round_to_step: bool = false
 export var max_range: int = 100
@@ -19,59 +18,71 @@ export var repeat_interval_secs: float = 0.02
 export (bool) var show_label = false setget edit_label_visible
 export (String) var label_text = "" setget edit_label_text
 export (alignments) var label_align = alignments.left setget edit_label_align
+export var wide_buttons: bool = false setget edit_button_wide
+
+onready var label = $HBox/Label
+onready var up = $HBox/ButtonContainer/Up
+onready var down = $HBox/ButtonContainer/Down
+onready var repeat_delay = $HBox/ButtonContainer/RepeatDelay
+onready var repeat_interval = $HBox/ButtonContainer/RepeatInterval
+onready var line_edit = $HBox/LineEdit
+onready var button_container = $HBox/ButtonContainer
 
 # forbidden LineEdit characters:
 
 const common_inputs = [".", ",", "_", "+", "=", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"]
 const symbol_inputs = ["<", ">", "!", "?", "@", "#", "$", "%", "&", "^", "/", "\\", "(", "{", "[", "|", ":", ";", "'", '"', ")", "}", "]", "~", "`"]
 const accent_inputs = ["à", "è", "é", "â", "ê", "î", "ô", "û", "ç", "¨", "ä", "ë", "ü", "ï", "ö", "ÿ", "ŷ",]
-# "
+
 # editor functions
 
 func edit_label_visible(_show_label):
 	if Engine.is_editor_hint():
 		show_label = not show_label 
-		if show_label:
-			$VBox/Label.visible = true
+		$HBox/Label.visible = show_label
+
+func edit_button_wide(_true:bool):
+	if Engine.is_editor_hint():
+		wide_buttons = not wide_buttons
+		if wide_buttons:
+			$HBox/ButtonContainer.set_h_size_flags(SIZE_EXPAND_FILL)
 		else:
-			$VBox/Label.visible = false
+			$HBox/ButtonContainer.set_h_size_flags(SIZE_FILL)
 
 func edit_label_text(new_text:String):
 	if Engine.is_editor_hint():
 		label_text = new_text
-		$VBox/Label.text = label_text
+		$HBox/Label.text = label_text
 
 func edit_label_align(_label_align:int):
 	if Engine.is_editor_hint():
 		label_align = _label_align
-		$VBox/Label.align = label_align
+		$HBox/Label.align = label_align
 
 func edit_initial_value(_value:int):
 	if Engine.is_editor_hint():
 		initial_value = _value
-		$VBox/HBox/LineEdit.text = _value as String
+		$HBox/LineEdit.text = _value as String
+
+var value: int = 0
+var last_valid_value: int = 0
 
 var repeat_delay_started: bool = false
 var either_button_down: bool = false
 var repeat_increment_value: int
 
-onready var label = $VBox/Label
-onready var up = $VBox/HBox/Buttons/Up
-onready var down = $VBox/HBox/Buttons/Down
-onready var repeat_delay = $VBox/HBox/Buttons/RepeatDelay
-onready var repeat_interval = $VBox/HBox/Buttons/RepeatInterval
-onready var line_edit = $VBox/HBox/LineEdit
-
 func _ready():
+	up.connect("button_down",self,"button_pressed",[true])
+	down.connect("button_down",self,"button_pressed",[false])
+	line_edit.connect("text_changed",self,"on_text_changed")
 	init()
-
 
 func init():
 	value = initial_value
 	update_value()
 	repeat_delay.wait_time = repeat_delay_secs
 	repeat_interval.wait_time = repeat_interval_secs
-
+	repeat_delay_started = false
 
 func button_pressed(up_button:bool): # refactor: rename to on_button_pressed, reconnect
 	if up_button:
