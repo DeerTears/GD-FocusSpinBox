@@ -16,15 +16,15 @@ export var min_range: int = 0
 export var repeat_delay_secs: float = 0.6
 export var repeat_interval_secs: float = 0.02
 export (bool) var show_label = false setget edit_label_visible
-export (String) var label_text = "" setget edit_label_text
+export (String) var label_text = "Custom Label" setget edit_label_text
 export (alignments) var label_align = alignments.left setget edit_label_align
 export var wide_buttons: bool = false setget edit_button_wide
 
 onready var label = $HBox/Label
 onready var up = $HBox/ButtonContainer/Up
 onready var down = $HBox/ButtonContainer/Down
-onready var repeat_delay = $HBox/ButtonContainer/RepeatDelay
-onready var repeat_interval = $HBox/ButtonContainer/RepeatInterval
+onready var repeat_delay_timer = $Timers/RepeatDelay
+onready var repeat_interval_timer = $Timers/RepeatInterval
 onready var line_edit = $HBox/LineEdit
 onready var button_container = $HBox/ButtonContainer
 
@@ -39,7 +39,7 @@ const accent_inputs = ["à", "è", "é", "â", "ê", "î", "ô", "û", "ç", "¨
 func edit_label_visible(_show_label):
 	if Engine.is_editor_hint():
 		show_label = not show_label 
-		$HBox/Label.visible = show_label
+		$HBox/Label.set_visible(show_label)
 
 func edit_button_wide(_true:bool):
 	if Engine.is_editor_hint():
@@ -72,19 +72,32 @@ var either_button_down: bool = false
 var repeat_increment_value: int
 
 func _ready():
-	up.connect("button_down",self,"button_pressed",[true])
-	down.connect("button_down",self,"button_pressed",[false])
+	up.connect("button_down",self,"on_button_pressed",[true])
+	down.connect("button_down",self,"on_button_pressed",[false])
+	up.connect("button_up",self,"on_button_released",[true])
+	down.connect("button_up",self,"on_button_released",[false])
+	
 	line_edit.connect("text_changed",self,"on_text_changed")
+	
+	up.connect("focus_exited",self,"on_child_focus_exited")
+	up.connect("focus_entered",self,"on_child_focus_entered")
+	down.connect("focus_exited",self,"on_child_focus_exited")
+	down.connect("focus_entered",self,"on_child_focus_entered")
+	line_edit.connect("focus_exited",self,"on_child_focus_exited")
+	line_edit.connect("focus_entered",self,"on_child_focus_entered")
+	
+	repeat_delay_timer.connect("timeout",self,"on_repeat_delay_timeout")
+	
 	init()
 
 func init():
 	value = initial_value
 	update_value()
-	repeat_delay.wait_time = repeat_delay_secs
-	repeat_interval.wait_time = repeat_interval_secs
+	repeat_delay_timer.wait_time = repeat_delay_secs
+	repeat_interval_timer.wait_time = repeat_interval_secs
 	repeat_delay_started = false
 
-func button_pressed(up_button:bool): # refactor: rename to on_button_pressed, reconnect
+func on_button_pressed(up_button:bool):
 	if up_button:
 		value += step
 		repeat_increment_value = step
@@ -98,15 +111,13 @@ func button_pressed(up_button:bool): # refactor: rename to on_button_pressed, re
 	either_button_down = true
 	if repeat_delay_started:
 		return
-	repeat_delay.start()
+	repeat_delay_timer.start()
 	repeat_delay_started = true
 
-
-func button_unpressed(_up_button:bool): # refactor: rename to on_button_unpressed, reconnect
+func on_button_released(_up_button:bool):
 	either_button_down = false
-	repeat_delay.stop()
+	repeat_delay_timer.stop()
 	repeat_delay_started = false
-
 
 func on_text_changed(new_text):
 	last_valid_value = value
@@ -140,38 +151,33 @@ func on_text_changed(new_text):
 	emit_signal("value_changed", value)
 	last_valid_value = value
 
-
-func repeat_delay_timeout(): # refactor: rename to on_repeat_delay_timeout, reconnect
+func on_repeat_delay_timeout():
 	repeat_delay_started = false
 	while either_button_down:
 		value += repeat_increment_value
 		update_value()
-		repeat_interval.start()
-		yield(repeat_interval,"timeout")
-		if all_nodes_lost_focus() == true:
+		repeat_interval_timer.start()
+		yield(repeat_interval_timer,"timeout")
+		if all_nodes_have_lost_focus() == true:
 			print_debug("Focus dropped on %s, ending repeat input prematurely." % [name])
 			either_button_down = false
 
-
-func item_focus_entered(): # refactor: rename to child_focus_entered, reconnect
+func on_child_focus_entered():
 	either_button_down = false
 
-
-func item_focus_exited(): # refactor: rename to child_focus_exited, reconnect
+func on_child_focus_exited(): # refactor: rename to child_focus_exited, reconnect
 	update_value()
 	# focus entry takes a cycle after this callback is called.
 	yield(get_tree(),"idle_frame") # without waiting first, nothing is focused for a cycle :(
-	if all_nodes_lost_focus() == true:
+	if all_nodes_have_lost_focus() == true:
 		emit_signal("focus_fully_exited")
 		#print_debug("All nodes of %s fully exited focus." % [name])
 
-
-func all_nodes_lost_focus() -> bool:
+func all_nodes_have_lost_focus() -> bool:
 	if (line_edit.has_focus() == false) and (up.has_focus() == false) and (down.has_focus() == false):
 		emit_signal("focus_fully_exited")
 		return true
 	return false
-
 
 func string_is_numeric(new_text:String) -> bool:
 	for non_numeric_character in common_inputs:
